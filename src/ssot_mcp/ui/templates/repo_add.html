@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="panel">
+  <h1>Add repository</h1>
+  <p class="hint">Clone URL (HTTPS recommended in containers). Duplicates are detected by exact URL match.</p>
+  <p class="hint">Cloning and indexing can take several minutes for large repositories; keep this page open until the list reloads.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/repos/new" class="stack" data-long-running
+        data-loading-msg="Cloning repository and building the keyword index. Large repos can take several minutes — please wait…">
+    <label>Git remote URL
+      <input name="url" type="text" inputmode="url" autocomplete="off" placeholder="https://github.com/org/repo.git" required>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="primary">Clone &amp; index</button>
+      <a href="/repos" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

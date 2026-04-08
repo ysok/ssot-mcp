@@ -1,0 +1,3 @@
+[console_scripts]
+ssot-mcp = ssot_mcp.cli.main:main
+ssot-mcp-ui = ssot_mcp.ui.main:run

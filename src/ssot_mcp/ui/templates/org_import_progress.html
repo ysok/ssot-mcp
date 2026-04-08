@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="panel">
+  <h1>Organization import</h1>
+  <p class="hint">This page updates automatically. You can open <a href="/repos">Repositories</a> in another tab anytime; the import keeps running on the server.</p>
+  <p class="hint">Repositories already in Single Source of Truth are <strong>synced</strong> (fetch + re-index + semantic when enabled), not cloned again.</p>
+  <p class="actions-row">
+    <a class="btn" href="/repos">Repositories</a>
+    <a class="btn" href="/import-org">New import</a>
+  </p>
+
+  <div id="import-progress-root" class="import-progress" data-poll-url="/import-org/progress.json">
+    <p id="imp-status" class="imp-status" aria-live="polite">Loading…</p>
+    <div id="imp-fatal" class="imp-fatal" hidden role="alert"></div>
+    <div class="progress-track" id="imp-track" hidden>
+      <div class="progress-bar" id="imp-bar" style="width: 0%"></div>
+    </div>
+    <p id="imp-counts" class="hint"></p>
+    <p id="imp-current" class="imp-current"></p>
+    <div class="table-wrap">
+      <table class="repo-table" id="imp-items" aria-label="Per-repository import status">
+        <thead>
+          <tr><th>Repository</th><th>Status</th><th>Detail</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var root = document.getElementById("import-progress-root");
+  if (!root) return;
+  var url = root.getAttribute("data-poll-url");
+  var statusEl = document.getElementById("imp-status");
+  var fatalEl = document.getElementById("imp-fatal");
+  var trackEl = document.getElementById("imp-track");
+  var barEl = document.getElementById("imp-bar");
+  var countsEl = document.getElementById("imp-counts");
+  var currentEl = document.getElementById("imp-current");
+  var tableBody = document.querySelector("#imp-items tbody");
+  var timer = null;
+
+  function setFatal(msg) {
+    fatalEl.textContent = msg;
+    fatalEl.hidden = !msg;
+  }
+
+  function render(state) {
+    if (!state || state.status === "idle") {
+      statusEl.textContent = "No import job found. Start one from Import org.";
+      setFatal("");
+      trackEl.hidden = true;
+      countsEl.textContent = "";
+      currentEl.textContent = "";
+      tableBody.innerHTML = "";
+      return;
+    }
+    if (state.error === "unauthorized") {
+      statusEl.textContent = "Session expired. Sign in again.";
+      return;
+    }
+    setFatal("");
+    var st = state.status;
+    if (st === "error" && state.fatal_error) {
+      statusEl.textContent = "Import failed";
+      setFatal(state.fatal_error);
+      trackEl.hidden = true;
+      countsEl.textContent = "";
+      currentEl.textContent = "";
+      tableBody.innerHTML = "";
+      return;
+    }
+    if (st === "starting") {
+      statusEl.textContent = "Starting…";
+      trackEl.hidden = true;
+      countsEl.textContent = "";
+      currentEl.textContent = "";
+      tableBody.innerHTML = "";
+      return;
+    }
+    if (st === "listing") {
+      statusEl.textContent = "Listing repositories from GitHub…";
+      trackEl.hidden = true;
+      countsEl.textContent = "";
+      currentEl.textContent = state.current || "";
+      tableBody.innerHTML = "";
+      return;
+    }
+    var total = state.total || 0;
+    var done = state.completed || 0;
+    if (st === "complete" && total === 0) {
+      statusEl.textContent = "Finished — no public repositories matched your filters.";
+      trackEl.hidden = true;
+      countsEl.textContent = "";
+      currentEl.textContent = "";
+      tableBody.innerHTML = "";
+      return;
+    }
+    if (st === "running" || st === "complete") {
+      statusEl.textContent = st === "complete" ? "Finished" : "Import in progress…";
+      trackEl.hidden = total <= 0;
+      var pct = total > 0 ? Math.round((100 * done) / total) : 0;
+      barEl.style.width = pct + "%";
+      countsEl.textContent = "Added: " + (state.added || 0) + " · Updated: " + (state.updated || 0) +
+        " · Failed: " + (state.failed || 0) + (total ? " · " + done + " / " + total : "");
+      currentEl.textContent = state.current ? ("Now: " + state.current) : "";
+      var items = state.items || [];
+      tableBody.innerHTML = items.map(function (row) {
+        var d = (row.detail || "").replace(/</g, "&lt;");
+        return "<tr><td><code>" + (row.name || "") + "</code></td><td>" + (row.status || "") + "</td><td class=\"muted\">" + d + "</td></tr>";
+      }).join("");
+    }
+  }
+
+  function poll() {
+    fetch(url, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        if (r.status === 401) return r.json().then(function (j) { j.error = "unauthorized"; return j; });
+        return r.json();
+      })
+      .then(function (state) {
+        render(state);
+        var st = state && state.status;
+        if (st === "complete" || st === "error" || st === "idle") {
+          if (timer) { clearInterval(timer); timer = null; }
+        }
+      })
+      .catch(function () {
+        statusEl.textContent = "Could not load progress (network error).";
+      });
+  }
+
+  function schedule() {
+    poll();
+    if (timer) clearInterval(timer);
+    timer = setInterval(poll, 2000);
+  }
+
+  schedule();
+})();
+</script>
+{% endblock %}

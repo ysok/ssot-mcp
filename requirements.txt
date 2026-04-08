@@ -1,0 +1,5 @@
+# Prefer: pip install -e .          (FTS keyword search)
+#          pip install -e '.[semantic]'   (+ LanceDB semantic search; needs OPENAI_API_KEY)
+#          pip install -e '.[test]'       (pytest)
+#          pip install -e '.[ui]'         (admin web UI)
+mcp>=1.8.0

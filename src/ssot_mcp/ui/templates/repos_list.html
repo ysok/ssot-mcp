@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block body %}
+{% if page_warning %}
+<div class="page-warning" role="status"><strong>Notice:</strong> {{ page_warning }}</div>
+{% endif %}
+<div class="toolbar">
+  <h1>Repositories</h1>
+  <div class="actions">
+    <a class="btn primary" href="/repos/new">Add repository</a>
+    <a class="btn" href="/import-org">Import GitHub org</a>
+  </div>
+</div>
+<p class="meta">{{ total }} total · page {{ page }} of {{ total_pages }} · {{ per_page }} per page</p>
+<p id="repos-semantic-live-hint" class="hint" hidden>This page refreshes automatically while semantic indexing is queued or running.</p>
+<div class="table-wrap">
+  <table class="repo-table">
+    <thead>
+      <tr>
+        <th scope="col">Name</th>
+        <th scope="col" class="hide-narrow">URL</th>
+        <th scope="col" class="hide-narrow col-num" title="Files in the SQLite FTS5 keyword index">Keywords</th>
+        <th scope="col" class="hide-narrow col-num" title="Embedding chunks (LanceDB). Yellow = queued or indexing; green = ready; red = failed (use retry).">Semantic</th>
+        <th scope="col" class="hide-narrow">Updated</th>
+        <th scope="col" class="col-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in repos %}
+      <tr>
+        <td data-label="Name">
+          <strong>{{ r.display_name }}</strong>
+          <div class="mono small hide-wide">{{ r.id[:8] }}…</div>
+        </td>
+        <td data-label="URL" class="hide-narrow mono small"><a href="{{ r.url }}">{{ r.url }}</a></td>
+        <td data-label="Keyword index" class="hide-narrow col-num" title="Full-text indexed files">
+          {% if r.fts_files > 0 %}
+          <span class="status-pill ok">{{ r.fts_files }} file{% if r.fts_files != 1 %}s{% endif %}</span>
+          {% else %}
+          <span class="status-pill warn" title="No files in keyword index yet">0</span>
+          {% endif %}
+        </td>
+        <td data-label="Semantic index" class="hide-narrow col-num semantic-cell" title="Embedding index status" data-semantic-status="{{ r.semantic_status or '' }}">
+          {% set su = r.semantic_ui %}
+          {% if su.kind == 'na' %}
+          <span class="muted" title="Install pip extra [semantic] (LanceDB + fastembed)">n/a</span>
+          {% elif su.kind == 'skipped' %}
+          <span class="muted" title="Semantic indexing off or dependencies missing when this repo was last updated">Off</span>
+          {% elif su.kind == 'pending' %}
+          <div class="semantic-cell-inner">
+            <span class="status-pill warn" title="Waiting for background embedding indexer">Queued</span>
+            {% if su.chunks > 0 %}<span class="muted small">{{ su.chunks }} chunk{% if su.chunks != 1 %}s{% endif %}</span>{% endif %}
+          </div>
+          {% elif su.kind == 'indexing' %}
+          <div class="semantic-cell-inner">
+            <span class="status-pill warn" title="Building embedding chunks">Indexing…</span>
+            {% if su.chunks > 0 %}<span class="muted small">{{ su.chunks }}</span>{% endif %}
+          </div>
+          {% elif su.kind == 'failed' %}
+          <div class="semantic-cell-inner">
+            <span class="status-pill semantic-fail" title="{{ su.error|e }}">Failed</span>
+            <form method="post" action="/repos/{{ r.id }}/semantic-retry" class="inline semantic-retry-form" title="Retry semantic indexing">
+              <button type="submit" class="btn-icon" aria-label="Retry semantic indexing">↻</button>
+            </form>
+          </div>
+          {% elif su.kind == 'ready' %}
+          <span class="status-pill ok">{{ su.chunks }} chunk{% if su.chunks != 1 %}s{% endif %}</span>
+          {% else %}
+          <span class="status-pill muted-pill" title="No chunks yet (legacy row or empty mirror)">{{ su.chunks }} chunk{% if su.chunks != 1 %}s{% endif %}</span>
+          {% endif %}
+        </td>
+        <td data-label="Updated" class="hide-narrow small">{{ r.updated_at[:19] }}</td>
+        <td class="row-actions" data-label="Actions">
+          <span class="row-actions-inner">
+            <a class="btn small" href="/repos/{{ r.id }}/edit">Edit</a>
+            <form method="post" action="/repos/{{ r.id }}/delete" class="inline" onsubmit="return confirm('Remove this repository from ssot-mcp and delete its mirror?');">
+              <button type="submit" class="btn small danger">Delete</button>
+            </form>
+          </span>
+        </td>
+      </tr>
+      {% else %}
+      <tr class="repo-table-empty"><td colspan="6" class="empty">No repositories yet. Add one or import a GitHub org.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Pagination">
+  {% if page > 1 %}
+  <a class="btn" href="/repos?page={{ page - 1 }}">Previous</a>
+  {% endif %}
+  <span class="page-info">Page {{ page }} / {{ total_pages }}</span>
+  {% if page < total_pages %}
+  <a class="btn" href="/repos?page={{ page + 1 }}">Next</a>
+  {% endif %}
+</nav>
+{% endif %}
+{% endblock %}
+{% block extra_body %}
+<script>
+(function () {
+  var busy = document.querySelector(
+    '.semantic-cell[data-semantic-status="pending"], .semantic-cell[data-semantic-status="indexing"]'
+  );
+  if (!busy) return;
+  var hint = document.getElementById("repos-semantic-live-hint");
+  if (hint) hint.hidden = false;
+  var sec = 4;
+  setInterval(function () {
+    if (document.visibilityState === "visible") {
+      location.reload();
+    }
+  }, sec * 1000);
+})();
+</script>
+{% endblock %}

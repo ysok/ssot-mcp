@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="panel">
+  <h1>Import GitHub organization</h1>
+  <p class="hint">Lists <strong>public</strong> repos via the GitHub API, then processes each in the <strong>background</strong>: first every mirror is <strong>cloned or synced</strong> and <strong>keyword-indexed</strong>; only after that pass finishes does the server <strong>queue semantic (embedding) indexing</strong> repo-by-repo so large repos cannot block the rest. For large orgs, set <a href="/settings/github">a GitHub API token</a> or <code>GITHUB_TOKEN</code> / <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> in the environment to avoid rate limits.</p>
+  <p class="hint">Each git operation uses a timeout (clone default 10 minutes). For <strong>very large</strong> repositories, set <code>SSOT_GIT_CLONE_TIMEOUT</code> / <code>SSOT_GIT_SYNC_TIMEOUT</code> on the server (seconds, up to 86400). You will be redirected to a <a href="/import-org/progress">live progress</a> page and can browse <a href="/repos">Repositories</a> while the import runs.</p>
+  <form method="post" action="/import-org" class="stack">
+    <label>Organization URL or login
+      <input type="text" name="org" placeholder="https://github.com/kubernetes or kubernetes" required autocomplete="off">
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="no_forks" value="1"> Skip forks
+    </label>
+    <label class="checkbox">
+      <input type="checkbox" name="no_archived" value="1"> Skip archived
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="primary">Start import</button>
+      <a href="/repos" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

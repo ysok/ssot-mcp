@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="panel doc-page">
+  <h1>Connect Cursor to this MCP server</h1>
+  <p class="hint">This admin UI and the MCP server are separate processes (or the container runs both). Cursor talks to the MCP endpoint only—not to this browser UI.</p>
+
+  <p class="page-warning" role="note">
+    <strong>MCP URL for this deployment:</strong>
+    <code class="mono">{{ mcp_url }}</code>
+    <span class="muted small"> — from <code>FASTMCP_HOST</code> / <code>FASTMCP_PORT</code> (defaults <code>0.0.0.0</code> / <code>{{ fastmcp_port }}</code>; localhost shown when the server listens on all interfaces).</span>
+  </p>
+
+  <h2>1. Run the MCP server (HTTP)</h2>
+  <p class="hint">From a terminal (same machine as Cursor, or reachable on your network):</p>
+  <pre class="code-block mono">export SSOT_DATA_DIR=./data
+export FASTMCP_HOST=127.0.0.1
+export FASTMCP_PORT={{ fastmcp_port }}
+python -m ssot_mcp.mcp.server</pre>
+  <p class="hint small">Container / combined runtime: ensure port <strong>{{ fastmcp_port }}</strong> is published (e.g. <code class="mono">-p {{ fastmcp_port }}:{{ fastmcp_port }}</code>).</p>
+
+  <h2>2. Add the server in Cursor</h2>
+  <p class="hint">Use either the project file <code class="mono">.cursor/mcp.json</code> or the user file <code class="mono">~/.cursor/mcp.json</code>. In Cursor Settings you can also use <strong>Tools &amp; MCP</strong> → add server.</p>
+  <p class="hint">For a <strong>remote HTTP</strong> server, Cursor expects <strong>streamable HTTP</strong> transport (matches this project’s default). Example:</p>
+  <pre class="code-block mono">{
+  "mcpServers": {
+    "ssot-mcp": {
+      "type": "streamableHttp",
+      "url": "{{ mcp_url }}"
+    }
+  }
+}</pre>
+  <p class="hint small">If your Cursor build only shows a URL field for HTTP MCP, use the same URL: <code class="mono">{{ mcp_url }}</code>.</p>
+  <p class="hint small">After editing JSON, fully <strong>restart Cursor</strong> so the server list reloads.</p>
+
+  <h2>Alternative: stdio (Cursor starts the server)</h2>
+  <p class="hint">Use this when you want Cursor to spawn the process instead of connecting to a URL. Point <code class="mono">command</code> at the same Python where <code class="mono">ssot-mcp</code> is installed, and set <code class="mono">SSOT_DATA_DIR</code> to your data root.</p>
+  <pre class="code-block mono">{
+  "mcpServers": {
+    "ssot-mcp": {
+      "command": "python",
+      "args": ["-m", "ssot_mcp.mcp.server"],
+      "env": {
+        "SSOT_DATA_DIR": "/path/to/your/data",
+        "SSOT_MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}</pre>
+  <p class="hint small">On Windows, use your venv’s <code class="mono">python.exe</code> path. Remove <code class="mono">FASTMCP_HOST</code> / <code class="mono">FASTMCP_PORT</code> for stdio—they apply to HTTP mode only.</p>
+
+  <h2>Same environment as this UI</h2>
+  <p class="hint">MCP tools use the same <code class="mono">SSOT_DATA_DIR</code> as this admin UI (same SQLite registry and mirrors). <strong>Semantic search</strong> uses on-device embeddings (<code class="mono">pip install 'ssot-mcp[semantic]'</code> — LanceDB + fastembed; no cloud API keys). Use the same <code class="mono">SSOT_DATA_DIR</code> in stdio <code class="mono">env</code> if Cursor starts the server.</p>
+
+  <h2>Check that it works</h2>
+  <ul class="hint doc-list">
+    <li>In Cursor chat, ask what MCP tools are available—you should see <code class="mono">list_repositories</code>, <code class="mono">search_code</code>, etc.</li>
+    <li>Ensure <code class="mono">SSOT_DATA_DIR</code> is the same for the MCP process as for this UI (same registry and mirrors).</li>
+  </ul>
+
+  <div class="form-actions">
+    <a href="/repos" class="btn">Back to repositories</a>
+  </div>
+</div>
+{% endblock %}

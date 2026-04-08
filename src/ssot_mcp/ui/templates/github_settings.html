@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="panel">
+  <h1>GitHub API token</h1>
+  <p class="hint">Used for <strong>Import GitHub org</strong> (listing public repositories via the GitHub API). Authenticated requests get a much higher rate limit than anonymous access.</p>
+  <p class="hint"><strong>Priority:</strong> if the server has <code>GITHUB_TOKEN</code> or <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> set (checked in that order), that value is always used and the saved file is ignored.</p>
+  <p class="hint">Otherwise the token below is read from <code class="mono">{{ data_dir_hint }}</code> (plain text; restrict access to your data directory).</p>
+
+  <p class="readonly">
+    <dt>Current source</dt>
+    <dd>
+      {% if token_source == "env" %}
+      <span class="status-pill ok">Environment variable</span> <span class="muted small"><code>GITHUB_TOKEN</code> or <code>GITHUB_PERSONAL_ACCESS_TOKEN</code> is set for this process.</span>
+      {% elif token_source == "file" %}
+      <span class="status-pill ok">Saved token file</span> <span class="muted small">Using <code>.github_token</code> under the data directory.</span>
+      {% else %}
+      <span class="status-pill warn">Not configured</span> <span class="muted small">Org listing uses unauthenticated rate limits unless you save a token or set the env var.</span>
+      {% endif %}
+    </dd>
+  </p>
+
+  <form method="post" action="/settings/github" class="stack">
+    <label>New token (optional)
+      <input name="github_token" type="password" autocomplete="off" placeholder="ghp_… or github_pat_…">
+    </label>
+    <p class="hint small">Fine-grained PAT: read access to metadata is enough for public org repo listing. Classic PAT: <code>public_repo</code> or broader.</p>
+    <label class="checkbox">
+      <input type="checkbox" name="clear_saved_token" value="1"> Remove saved token file from disk
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="primary">Save</button>
+      <a href="/repos" class="btn">Back to repositories</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

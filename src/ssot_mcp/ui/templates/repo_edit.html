@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="panel">
+  <h1>Edit repository</h1>
+  <p class="hint">Display name only. Remote URL and mirror path are fixed; remove and re-add to change URL.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <dl class="readonly">
+    <dt>Repository ID</dt><dd class="mono">{{ repo.id }}</dd>
+    <dt>URL</dt><dd><a href="{{ repo.url }}">{{ repo.url }}</a></dd>
+    <dt>Mirror</dt><dd class="mono small">{{ repo.mirror_path }}</dd>
+  </dl>
+  <form method="post" action="/repos/{{ repo.id }}/edit" class="stack">
+    <label>Display name
+      <input type="text" name="display_name" value="{{ repo.display_name }}" required autocomplete="off">
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="primary">Save</button>
+      <a href="/repos" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

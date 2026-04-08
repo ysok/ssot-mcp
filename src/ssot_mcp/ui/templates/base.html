@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Single Source of Truth - MCP</title>
+  <link rel="icon" href="/static/ssot-mcp.png" type="image/png">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <a href="/repos" class="brand-link">
+        <img src="/static/ssot-mcp.png" alt="" width="40" height="40" class="logo">
+        <span class="brand-text">Single Source of Truth <span class="muted">— MCP</span></span>
+      </a>
+    </div>
+    {% if show_nav|default(false) %}
+    <nav class="nav">
+      <a href="/repos">Repositories</a>
+      <a href="/repos/new">Add</a>
+      <a href="/import-org">Import org</a>
+      <a href="/settings/github">GitHub token</a>
+      <a href="/help/cursor-mcp">Cursor MCP</a>
+      <form method="post" action="/logout" class="logout-form">
+        <button type="submit" class="link-btn">Sign out</button>
+      </form>
+    </nav>
+    {% endif %}
+  </header>
+  <main class="main">
+    {% if flash %}
+    <div class="flash flash-{{ flash.kind }}" role="{% if flash.kind == 'error' %}alert{% else %}status{% endif %}" {% if flash.kind == 'error' %}aria-live="assertive"{% else %}aria-live="polite"{% endif %}>{{ flash.text }}</div>
+    {% endif %}
+    <div id="long-run-banner" class="long-run-banner" hidden role="status" aria-live="polite"></div>
+    {% block body %}{% endblock %}
+  </main>
+  <footer class="footer">
+    <span>ssot-mcp admin</span>
+  </footer>
+  <script>
+  (function () {
+    document.querySelectorAll("form[data-long-running]").forEach(function (form) {
+      form.addEventListener("submit", function () {
+        var msg = form.getAttribute("data-loading-msg") || "Working… please wait.";
+        var el = document.getElementById("long-run-banner");
+        if (el) {
+          el.textContent = msg;
+          el.hidden = false;
+        }
+        form.setAttribute("aria-busy", "true");
+        form.querySelectorAll("button[type=\"submit\"], input[type=\"submit\"]").forEach(function (b) {
+          b.disabled = true;
+          b.setAttribute("aria-disabled", "true");
+        });
+      });
+    });
+  })();
+  </script>
+  {% block extra_body %}{% endblock %}
+</body>
+</html>
