@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from ssot_mcp.core.store import semantic_indexing_activity_hint
 from ssot_mcp.embeddings.semantic import semantic_dependencies_installed
 from ssot_mcp.services.repos import add_repository, remove_repository, retry_semantic_indexing
 from ssot_mcp.ui import authn
@@ -37,6 +38,9 @@ def _semantic_ui_row(
     status: str | None,
     error: str | None,
     repo_id: str,
+    *,
+    heartbeat_at: str | None = None,
+    started_at: str | None = None,
 ) -> dict[str, Any]:
     """Build template-friendly semantic column state (counts + status colors + retry)."""
     if sem_map is None:
@@ -52,7 +56,11 @@ def _semantic_ui_row(
     if status == "pending":
         return {"kind": "pending", "chunks": chunks}
     if status == "indexing":
-        return {"kind": "indexing", "chunks": chunks}
+        return {
+            "kind": "indexing",
+            "chunks": chunks,
+            "indexing_hint": semantic_indexing_activity_hint(heartbeat_at, started_at),
+        }
     if status == "failed":
         return {"kind": "failed", "chunks": chunks, "error": (error or "")[:400]}
     if status == "ready":
@@ -85,6 +93,8 @@ def list_repos(request: Request, store: StoreDep, page: int = 1) -> HTMLResponse
             d.get("semantic_status"),
             d.get("semantic_error"),
             rid,
+            heartbeat_at=d.get("semantic_indexing_heartbeat_at"),
+            started_at=d.get("semantic_indexing_started_at"),
         )
         enriched.append(d)
     page_warning = " ".join(stats_notes) if stats_notes else None

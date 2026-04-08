@@ -52,7 +52,7 @@
           </div>
           {% elif su.kind == 'indexing' %}
           <div class="semantic-cell-inner">
-            <span class="status-pill warn" title="Building embedding chunks">Indexing…</span>
+            <span class="status-pill warn" title="{{ su.indexing_hint|e }}">Indexing…</span>
             {% if su.chunks > 0 %}<span class="muted small">{{ su.chunks }}</span>{% endif %}
           </div>
           {% elif su.kind == 'failed' %}

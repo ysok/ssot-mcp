@@ -7,7 +7,7 @@ import time
 import uuid
 from pathlib import Path
 
-from ssot_mcp.core.store import Store
+from ssot_mcp.core.store import Store, _semantic_heartbeat_file_interval
 
 _TABLE = "code_chunks"
 # Default Lance dataset (fastembed vectors; e.g. 384-d for BAAI/bge-small-en-v1.5).
@@ -194,15 +194,20 @@ def reindex_repository_semantic(store: Store, repo_id: str, mirror: Path) -> str
     if tbl is not None:
         tbl.delete(f"repo_id = '{rid_sql}'")
 
+    store.touch_semantic_indexing_heartbeat(repo_id)
+
     batch_max = _batch_size()
+    file_beat_every = _semantic_heartbeat_file_interval()
     pending: list[tuple[str, int, str]] = []
     total_chunks = 0
     tbl_holder: list = [tbl]
+    files_since_beat = 0
 
     def flush() -> None:
         nonlocal total_chunks
         if not pending:
             return
+        store.touch_semantic_indexing_heartbeat(repo_id)
         texts = [t[2] for t in pending]
         vecs = _embed_batch(texts)
         if not vecs:
@@ -225,9 +230,14 @@ def reindex_repository_semantic(store: Store, repo_id: str, mirror: Path) -> str
             tbl_holder[0].add(records)
         total_chunks += len(records)
         pending.clear()
+        store.touch_semantic_indexing_heartbeat(repo_id)
         time.sleep(float(os.environ.get("SSOT_EMBEDDING_SLEEP_MS", "0") or 0) / 1000.0)
 
     for path, text in store.iter_mirror_text_files(mirror):
+        files_since_beat += 1
+        if files_since_beat >= file_beat_every:
+            store.touch_semantic_indexing_heartbeat(repo_id)
+            files_since_beat = 0
         for idx, piece in enumerate(chunk_text(text)):
             pending.append((path, idx, piece))
             if len(pending) >= batch_max:

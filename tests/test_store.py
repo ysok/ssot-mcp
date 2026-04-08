@@ -144,6 +144,34 @@ def test_list_repos_page_and_count(store: Store, tmp_path: Path) -> None:
     assert len(p2) == 5
 
 
+def test_reconcile_stale_semantic_indexing_flags_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    store: Store,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SSOT_SEMANTIC_INDEXING_STALE_SEC", "1")
+    mp = tmp_path / "m"
+    mp.mkdir()
+    (mp / "a.py").write_text("x = 1\n")
+    rid = store.add_repo("https://example.com/r.git", "r", mp)
+    store.begin_semantic_indexing(rid)
+    with store.connect() as conn:
+        old = "2020-01-01T00:00:00+00:00"
+        conn.execute(
+            """
+            UPDATE repos SET semantic_indexing_heartbeat_at = ?,
+            semantic_indexing_started_at = ? WHERE id = ?
+            """,
+            (old, old, rid),
+        )
+        conn.commit()
+    assert store.reconcile_stale_semantic_indexing() == 1
+    assert store.reconcile_stale_semantic_indexing() == 0
+    rows = store.list_repos()
+    assert rows[0]["semantic_status"] == "failed"
+    assert "stalled" in (rows[0].get("semantic_error") or "").lower()
+
+
 def test_get_repo_detail_and_update_display_name(store: Store, tmp_path: Path) -> None:
     mp = tmp_path / "m"
     mp.mkdir()

@@ -53,7 +53,7 @@ def _run_semantic_job(data_root: Path, repo_id: str) -> None:
             _active_ids.discard(repo_id)
         return
     mirror = Path(str(row[0]))
-    store.set_semantic_status(repo_id, "indexing", None)
+    store.begin_semantic_indexing(repo_id)
     try:
         from ssot_mcp.embeddings.semantic import reindex_repository_semantic
 

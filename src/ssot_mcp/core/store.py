@@ -63,6 +63,84 @@ def _ensure_repos_semantic_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE repos ADD COLUMN semantic_chunk_count INTEGER")
     if "keyword_fts_file_count" not in cols:
         conn.execute("ALTER TABLE repos ADD COLUMN keyword_fts_file_count INTEGER")
+    if "semantic_indexing_started_at" not in cols:
+        conn.execute("ALTER TABLE repos ADD COLUMN semantic_indexing_started_at TEXT")
+    if "semantic_indexing_heartbeat_at" not in cols:
+        conn.execute("ALTER TABLE repos ADD COLUMN semantic_indexing_heartbeat_at TEXT")
+
+
+def _semantic_indexing_stale_seconds() -> float:
+    raw = (os.environ.get("SSOT_SEMANTIC_INDEXING_STALE_SEC") or "1800").strip()
+    try:
+        v = float(raw)
+    except ValueError:
+        v = 1800.0
+    return max(60.0, min(v, 86400.0))
+
+
+def _parse_iso_utc(s: str | None) -> datetime | None:
+    if not s or not str(s).strip():
+        return None
+    try:
+        t = str(s).strip()
+        if t.endswith("Z"):
+            t = t[:-1] + "+00:00"
+        dt = datetime.fromisoformat(t)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
+    except (ValueError, TypeError):
+        return None
+
+
+def _semantic_indexing_timestamps_stale(
+    heartbeat_at: str | None,
+    started_at: str | None,
+    *,
+    now: datetime,
+    stale_sec: float,
+) -> bool:
+    """True if indexing appears dead (no recent heartbeat / start)."""
+    hb_dt = _parse_iso_utc(heartbeat_at)
+    st_dt = _parse_iso_utc(started_at)
+    ref = hb_dt or st_dt
+    if ref is None:
+        return True
+    return (now - ref).total_seconds() > stale_sec
+
+
+_STALE_INDEXING_MSG = (
+    "Indexing stalled or process stopped (no heartbeat). Use retry to re-queue."
+)
+
+
+def semantic_indexing_activity_hint(
+    heartbeat_at: str | None,
+    started_at: str | None,
+) -> str:
+    """Short UI tooltip: how recently the embedding worker reported progress."""
+    now = datetime.now(UTC)
+    hb = _parse_iso_utc(heartbeat_at)
+    st = _parse_iso_utc(started_at)
+    ref = hb or st
+    if ref is None:
+        return "Building embedding chunks."
+    sec = max(0.0, (now - ref).total_seconds())
+    if sec < 8:
+        return "Building embedding chunks (active; heartbeat just now)."
+    if sec < 120:
+        return f"Building embedding chunks (last activity {int(sec)}s ago)."
+    if sec < 3600:
+        return f"Building embedding chunks (last activity {int(sec // 60)}m ago)."
+    return f"Building embedding chunks (last activity {int(sec // 3600)}h ago)."
+
+
+def _semantic_heartbeat_file_interval() -> int:
+    try:
+        v = int(os.environ.get("SSOT_SEMANTIC_HEARTBEAT_FILE_INTERVAL", "25"))
+    except ValueError:
+        v = 25
+    return max(1, min(v, 500))
 
 
 def _sqlite_busy_timeout_sec() -> float:
@@ -134,13 +212,80 @@ class Store:
             conn.commit()
 
     def set_semantic_status(self, repo_id: str, status: str | None, error: str | None) -> None:
+        if status == "indexing":
+            self.begin_semantic_indexing(repo_id)
+            return
         self.init_db()
         with self.connect() as conn:
             conn.execute(
-                "UPDATE repos SET semantic_status = ?, semantic_error = ? WHERE id = ?",
+                """
+                UPDATE repos SET semantic_status = ?, semantic_error = ?,
+                semantic_indexing_started_at = NULL, semantic_indexing_heartbeat_at = NULL
+                WHERE id = ?
+                """,
                 (status, error, repo_id),
             )
             conn.commit()
+
+    def begin_semantic_indexing(self, repo_id: str) -> None:
+        """Mark repo as indexing and set start + heartbeat (call when worker actually starts the job)."""
+        self.init_db()
+        now = datetime.now(UTC).isoformat()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE repos SET semantic_status = 'indexing', semantic_error = NULL,
+                semantic_indexing_started_at = ?, semantic_indexing_heartbeat_at = ?
+                WHERE id = ?
+                """,
+                (now, now, repo_id),
+            )
+            conn.commit()
+
+    def touch_semantic_indexing_heartbeat(self, repo_id: str) -> None:
+        """Refresh heartbeat while embedding (proves worker is alive)."""
+        self.init_db()
+        now = datetime.now(UTC).isoformat()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                UPDATE repos SET semantic_indexing_heartbeat_at = ?
+                WHERE id = ? AND semantic_status = 'indexing'
+                """,
+                (now, repo_id),
+            )
+            conn.commit()
+
+    def reconcile_stale_semantic_indexing(self) -> int:
+        """
+        Mark indexing repos as failed when heartbeat is too old (crashed worker / stuck UI).
+        Returns number of rows updated.
+        """
+        self.init_db()
+        stale_sec = _semantic_indexing_stale_seconds()
+        now = datetime.now(UTC)
+        with self.connect() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT id, semantic_indexing_heartbeat_at, semantic_indexing_started_at
+                FROM repos WHERE semantic_status = 'indexing'
+                """,
+            ).fetchall()
+        n = 0
+        for row in rows:
+            rid = str(row["id"])
+            if not _semantic_indexing_timestamps_stale(
+                row["semantic_indexing_heartbeat_at"],
+                row["semantic_indexing_started_at"],
+                now=now,
+                stale_sec=stale_sec,
+            ):
+                continue
+            self.set_semantic_status(rid, "failed", _STALE_INDEXING_MSG)
+            self.set_semantic_chunk_count(rid, 0)
+            n += 1
+        return n
 
     def set_semantic_chunk_count(self, repo_id: str, n: int) -> None:
         """Persist LanceDB chunk count for UI (updated when indexing completes; reset when re-queued)."""
@@ -162,13 +307,15 @@ class Store:
         return str(row[0]), str(row[1]), str(row[2])
 
     def list_repos(self) -> list[dict[str, str]]:
+        self.reconcile_stale_semantic_indexing()
         with self.connect() as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
                 SELECT id, url, display_name, mirror_path, created_at, updated_at,
                        semantic_status, semantic_error, semantic_chunk_count,
-                       keyword_fts_file_count
+                       keyword_fts_file_count,
+                       semantic_indexing_started_at, semantic_indexing_heartbeat_at
                 FROM repos ORDER BY display_name
                 """
             ).fetchall()
@@ -183,6 +330,7 @@ class Store:
         page = max(1, page)
         per_page = max(1, min(int(per_page), 100))
         offset = (page - 1) * per_page
+        self.reconcile_stale_semantic_indexing()
         with self.connect() as conn:
             conn.row_factory = sqlite3.Row
             total = int(conn.execute("SELECT COUNT(*) FROM repos").fetchone()[0])
@@ -190,7 +338,8 @@ class Store:
                 """
                 SELECT id, url, display_name, mirror_path, created_at, updated_at,
                        semantic_status, semantic_error, semantic_chunk_count,
-                       keyword_fts_file_count
+                       keyword_fts_file_count,
+                       semantic_indexing_started_at, semantic_indexing_heartbeat_at
                 FROM repos
                 ORDER BY display_name COLLATE NOCASE
                 LIMIT ? OFFSET ?
@@ -244,13 +393,15 @@ class Store:
             conn.commit()
 
     def get_repo_detail(self, repo_id: str) -> dict[str, str] | None:
+        self.reconcile_stale_semantic_indexing()
         with self.connect() as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
                 SELECT id, url, display_name, mirror_path, created_at, updated_at,
                        semantic_status, semantic_error, semantic_chunk_count,
-                       keyword_fts_file_count
+                       keyword_fts_file_count,
+                       semantic_indexing_started_at, semantic_indexing_heartbeat_at
                 FROM repos WHERE id = ?
                 """,
                 (repo_id,),

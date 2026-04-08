@@ -20,7 +20,10 @@ def test_semantic_ui_tracked_statuses() -> None:
     m = {rid: 0}
     assert _semantic_ui_row(m, "skipped", None, rid)["kind"] == "skipped"
     assert _semantic_ui_row(m, "pending", None, rid) == {"kind": "pending", "chunks": 0}
-    assert _semantic_ui_row(m, "indexing", None, rid) == {"kind": "indexing", "chunks": 0}
+    idx = _semantic_ui_row(m, "indexing", None, rid)
+    assert idx["kind"] == "indexing"
+    assert idx["chunks"] == 0
+    assert "indexing_hint" in idx
     assert _semantic_ui_row(m, "ready", None, rid) == {"kind": "ready", "chunks": 0}
     f = _semantic_ui_row(m, "failed", "boom", rid)
     assert f["kind"] == "failed"
